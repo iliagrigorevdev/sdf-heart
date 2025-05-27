@@ -43,8 +43,8 @@ async function main() {
   let fragmentShaderSource;
 
   try {
-    vertexShaderSource = await loadShaderSource("vertex-shader.glsl");
-    fragmentShaderSource = await loadShaderSource("fragment-shader.glsl");
+    vertexShaderSource = await loadShaderSource("shader.vert");
+    fragmentShaderSource = await loadShaderSource("shader.frag");
   } catch (error) {
     console.error("Error loading shader files:", error);
     alert("Could not load shader files. Check the console for details.");
