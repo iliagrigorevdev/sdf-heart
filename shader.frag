@@ -71,7 +71,7 @@ vec3 gradHeart(vec3 p, float a, float b) {
 
 // Heart SDF
 float sdHeart(vec3 p, float a, float b) {
-  return abs(eqHeart(p, a, b)) / length(gradHeart(p, a, b));
+  return eqHeart(p, a, b) / length(gradHeart(p, a, b));
 }
 
 // --- Scene Definition ---
