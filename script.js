@@ -91,7 +91,7 @@ async function main() {
       const dy = (e.clientY - mouse.lastY) * 0.01;
 
       camera.azimuth -= dx;
-      camera.elevation += dy;
+      camera.elevation -= dy;
       camera.elevation = Math.max(
         -Math.PI / 2 + 0.01,
         Math.min(Math.PI / 2 - 0.01, camera.elevation),
