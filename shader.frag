@@ -69,11 +69,20 @@ vec3 gradHeart(vec3 p, float a, float b) {
   return vec3(df_dx, df_dy, df_dz);
 }
 
-// Heart SDF
-float sdHeart(vec3 p, float a, float b) {
-  // Adding a small epsilon to length(gradHeart) to prevent division by zero if gradient is zero
-  // (though unlikely for this implicit surface far from origin, it's a safeguard)
-  return eqHeart(p, a, b) / (length(gradHeart(p, a, b)) + 1e-6);
+// Heart SDF (Signed Distance Function)
+// Modified to support anisotropic scaling for animation.
+// p_def_coord: Point in the heart's definition coordinate system.
+//              (This means it's p_world transformed to heart local, swizzled, AND divided by animation scales)
+// a, b: Shape parameters for the heart equation.
+// anim_scales: The (sx, sy, sz) animation scales applied to the heart's x, y, z axes (relative to eqHeart's coord system).
+float sdHeart(vec3 p_def_coord, float a, float b, vec3 anim_scales) {
+  float eq_val = eqHeart(p_def_coord, a, b);
+  vec3 grad_val = gradHeart(p_def_coord, a, b); // Gradient w.r.t. p_def_coord
+
+  // The true SDF for an anisotropically scaled implicit surface F(p_def_coord) = 0,
+  // where p_def_coord = p_local_scaled_space / anim_scales, is:
+  // F(p_def_coord) / length( grad_wrt_p_def_coord(F) / anim_scales )
+  return eq_val / (length(grad_val / anim_scales) + 1e-9); // Increased epsilon slightly from 1e-6 for stability with scales
 }
 
 // --- Scene Definition ---
@@ -82,9 +91,59 @@ vec2 map(vec3 p) {
   float sceneDist = 1e10; // Large number (effectively infinity)
   float materialID = 0.0; // 0: default/ground, 1: heart
 
-  // Heart
-  vec3 heartPos = vec3(0.0, 1.0, 0.0);
-  float heartDist = sdHeart((p - heartPos).xzy, 9.0 / 4.0, 9.0 / 200.0);
+  // --- Heart Definition & Animation ---
+  vec3 heartPos = vec3(0.0, 1.0, 0.0); // Center of the heart in world space
+
+  // Transform world point p to heart's local, swizzled coordinate system (before animation scaling)
+  // This swizzle orients the heart:
+  // eqHeart's x-axis maps to world X (width)
+  // eqHeart's y-axis maps to world Z (depth)
+  // eqHeart's z-axis maps to world Y (height)
+  vec3 p_local_swizzled = (p - heartPos).xzy;
+
+  // Animation parameters for heartbeat
+  float beat_amplitude = 0.05; // Max contraction/expansion (e.g., 0.05 means 5% change from base size)
+  float beat_bpm = 30.0; // Beats per minute for the animation
+  float beat_freq_rad_per_sec = 2.0 * 3.1415926535 * (beat_bpm / 60.0); // Convert BPM to angular frequency
+
+  float beat_phase = u_time * beat_freq_rad_per_sec;
+  // beat_cycle modulates from 0 (representing max contraction) to 1 (representing max relaxation/base size)
+  float beat_cycle = (cos(beat_phase) + 1.0) * 0.5;
+
+  // s_beat is the scale factor for width (eqHeart.x) and depth (eqHeart.y)
+  // It ranges from (1.0 - beat_amplitude) during contraction, up to 1.0 during relaxation.
+  float s_beat = 1.0 - beat_amplitude * (1.0 - beat_cycle);
+
+  // Define animation scales for each axis of the eqHeart coordinate system
+  float scale_heart_eqX = s_beat; // Scales eqHeart.x (world X / width)
+  float scale_heart_eqY = s_beat; // Scales eqHeart.y (world Z / depth)
+
+  // scale_heart_eqZ scales eqHeart.z (world Y / height), and compensates to preserve volume.
+  // Volume preservation: sx * sy * sz = 1  => sz = 1 / (sx * sy)
+  // Add a small epsilon to denominator to prevent division by zero if sx*sy is ever zero (though logic prevents s_beat=0).
+  float scale_heart_eqZ = 1.0 / (scale_heart_eqX * scale_heart_eqY + 1e-7);
+
+  vec3 heart_animation_scales = vec3(
+    scale_heart_eqX,
+    scale_heart_eqY,
+    scale_heart_eqZ
+  );
+
+  // Transform the local, swizzled point into the heart's *definition* space by dividing by animation scales.
+  // This p_heart_definition_coords is what eqHeart and gradHeart expect.
+  vec3 p_heart_definition_coords = p_local_swizzled / heart_animation_scales;
+
+  // Original heart shape parameters (these define the base shape before animation scaling)
+  const float heart_param_a = 9.0 / 4.0; // Controls y-squash in eqHeart (which is world Z / depth due to swizzle)
+  const float heart_param_b = 9.0 / 200.0;
+
+  float heartDist = sdHeart(
+    p_heart_definition_coords,
+    heart_param_a,
+    heart_param_b,
+    heart_animation_scales
+  );
+
   if (heartDist < sceneDist) {
     sceneDist = heartDist;
     materialID = 1.0;
@@ -120,7 +179,7 @@ const float HIT_THRESHOLD = 0.001;
 
 vec2 raymarch(vec3 ro, vec3 rd) {
   float t = 0.0;
-  float currentMaterialID = -1.0; // Use a local var for material ID during march
+  float currentMaterialID = -1.0;
 
   for (int i = 0; i < MAX_STEPS; i++) {
     vec3 p_current = ro + t * rd;
@@ -131,6 +190,7 @@ vec2 raymarch(vec3 ro, vec3 rd) {
       currentMaterialID = map_result.y;
       return vec2(t, currentMaterialID);
     }
+
     t += dist_to_surface;
     if (t > MAX_DIST) {
       break;
@@ -142,8 +202,8 @@ vec2 raymarch(vec3 ro, vec3 rd) {
 // --- Camera Ray Generation ---
 vec3 getRayDirection(vec2 uv, vec3 camPos, vec3 lookAt, float zoom) {
   vec3 f = normalize(lookAt - camPos);
-  vec3 r = normalize(cross(vec3(0.0, 1.0, 0.0), f));
-  vec3 u = cross(f, r);
+  vec3 r = normalize(cross(vec3(0.0, 1.0, 0.0), f)); // Right vector
+  vec3 u = cross(f, r); // Up vector (corrected)
 
   return normalize(f * zoom + uv.x * r + uv.y * u);
 }
@@ -154,26 +214,34 @@ vec3 applyLighting(vec3 p, vec3 normal, vec3 rayDir, float materialID) {
   vec3 lightDir = normalize(lightPos - p);
   vec3 viewDir = -rayDir;
 
-  vec3 materialColor = vec3(0.6);
-  if (materialID == 0.0) materialColor = vec3(0.4, 0.5, 0.3);
+  vec3 materialColor = vec3(0.6); // Default color
+  if (materialID == 0.0) materialColor = vec3(0.4, 0.5, 0.3); // Ground: desaturated green
   if (materialID == 1.0) materialColor = vec3(0.9, 0.15, 0.4); // Heart: deep pink/magenta
 
+  // Ambient light
   float ambientStrength = 0.2;
   vec3 ambient = ambientStrength * materialColor;
 
+  // Diffuse light
   float diff = max(dot(normal, lightDir), 0.0);
   vec3 diffuse = diff * materialColor;
 
+  // Specular light
   float specularStrength = 0.8;
   vec3 reflectDir = reflect(-lightDir, normal);
-  float spec = pow(max(dot(viewDir, reflectDir), 0.0), 32.0);
-  vec3 specular = specularStrength * spec * vec3(1.0);
+  float spec = pow(max(dot(viewDir, reflectDir), 0.0), 32.0); // Shininess
+  vec3 specular = specularStrength * spec * vec3(1.0); // White highlights
 
+  // Shadow calculation
   float shadow = 1.0;
-  vec3 shadowRayOrigin = p + normal * (HIT_THRESHOLD * 10.0);
+  // Offset shadow ray origin slightly along the normal to avoid self-shadowing ("shadow acne")
+  vec3 shadowRayOrigin = p + normal * (HIT_THRESHOLD * 25.0); // Increased bias for scaled SDF
   vec2 shadowRes = raymarch(shadowRayOrigin, lightDir);
+
+  // Check if the shadow ray hit an object before reaching the light source
   if (shadowRes.x < length(lightPos - shadowRayOrigin) && shadowRes.y > -0.5) {
-    shadow = 0.3;
+    // shadowRes.y > -0.5 means a valid material was hit
+    shadow = 0.3; // Point is in shadow
   }
 
   return ambient + (diffuse + specular) * shadow;
@@ -196,14 +264,20 @@ void main() {
 
   vec3 color;
   if (materialID_hit > -0.5) {
+    // If an object was hit (materialID is not -1.0)
     vec3 hitPoint = rayOrigin + rayDirection * distToSurface;
     vec3 normal = calcNormal(hitPoint);
     color = applyLighting(hitPoint, normal, rayDirection, materialID_hit);
 
-    float fogAmount = smoothstep(10.0, 30.0, distToSurface);
-    color = mix(color, vec3(0.5, 0.6, 0.7), fogAmount);
+    // Fog effect: color blends towards fogColor based on distance
+    float fogAmount = smoothstep(10.0, 30.0, distToSurface); // Start fog at 10 units, full fog at 30 units
+    vec3 fogColor = vec3(0.5, 0.6, 0.7); // Bluish-grey fog
+    color = mix(color, fogColor, fogAmount);
   } else {
-    color = vec3(0.5, 0.6, 0.7) - max(rayDirection.y, 0.0) * 0.2;
+    // Background color (sky)
+    vec3 skyColor = vec3(0.5, 0.6, 0.7); // Base sky color
+    // Make sky slightly brighter towards top
+    color = skyColor - max(rayDirection.y, 0.0) * 0.2;
   }
 
   gl_FragColor = vec4(color, 1.0);
