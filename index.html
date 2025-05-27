@@ -315,8 +315,11 @@
         function render(time) {
             time *= 0.001; // convert time to seconds
 
-            resizeCanvasToDisplaySize(gl.canvas);
-            gl.viewport(0, 0, gl.canvas.width, gl.canvas.height);
+            // Resize canvas to match display size * devicePixelRatio for native resolution
+            if (resizeCanvasToDisplaySize(gl.canvas, window.devicePixelRatio || 1)) {
+                // If resize happened, viewport needs to be updated
+                gl.viewport(0, 0, gl.canvas.width, gl.canvas.height);
+            }
 
             gl.clearColor(0, 0, 0, 0);
             gl.clear(gl.COLOR_BUFFER_BIT);
@@ -373,15 +376,27 @@
             gl.deleteProgram(program);
         }
         
-        function resizeCanvasToDisplaySize(canvas) {
-            const displayWidth  = canvas.clientWidth;
-            const displayHeight = canvas.clientHeight;
-            if (canvas.width  !== displayWidth || canvas.height !== displayHeight) {
-                canvas.width  = displayWidth;
-                canvas.height = displayHeight;
-                return true;
+        /**
+         * Resizes the canvas's drawing buffer to match its display size,
+         * scaled by a multiplier (e.g., window.devicePixelRatio).
+         * @param {HTMLCanvasElement} canvas The canvas to resize.
+         * @param {number} [multiplier=1] The resolution multiplier.
+         * @returns {boolean} true if the canvas was resized, false otherwise.
+         */
+        function resizeCanvasToDisplaySize(canvas, multiplier) {
+            multiplier = multiplier || 1;
+            // round to integer to avoid potential issues with fractional pixels
+            const width  = Math.floor(canvas.clientWidth  * multiplier);
+            const height = Math.floor(canvas.clientHeight * multiplier);
+
+            // Check if the canvas's internal (drawing buffer) size is different
+            if (canvas.width  !== width || canvas.height !== height) {
+                // Make the canvas's drawing buffer match its display size
+                canvas.width  = width;
+                canvas.height = height;
+                return true; // Canvas was resized
             }
-            return false;
+            return false; // Canvas size did not change
         }
 
         // Start the application
