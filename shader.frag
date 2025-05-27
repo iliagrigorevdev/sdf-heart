@@ -103,18 +103,7 @@ vec2 map(vec3 p) {
 
   // 3D Heart
   vec3 heartPos = vec3(0.0, 1.0, -2.0);
-  float heartScale = 0.8;
-
-  vec3 p_to_heart_origin = p - heartPos;
-
-  // Transform p to heart's local, scaled space
-  vec3 p_heart_local = p_to_heart_origin / heartScale;
-
-  float raw_heart_val = sdHeartImplicit(p_heart_local);
-
-  float heartSDF_NormalizationFactor = 0.3;
-  float heartDist = raw_heart_val * heartScale * heartSDF_NormalizationFactor;
-
+  float heartDist = sdHeartImplicit((p - heartPos).xzy);
   if (heartDist < sceneDist) {
     sceneDist = heartDist;
     materialID = 4.0;
