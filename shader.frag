@@ -6,22 +6,6 @@ uniform vec3 u_cameraPos;
 uniform vec3 u_cameraLookAt;
 uniform float u_cameraZoom; // Effectively FOV control
 
-// --- SDF Primitives ---
-float sdSphere(vec3 p, float s) {
-  return length(p) - s;
-}
-
-float sdBox(vec3 p, vec3 b) {
-  vec3 q = abs(p) - b;
-  return length(max(q, 0.0)) + min(max(q.x, max(q.y, q.z)), 0.0);
-}
-
-float sdTorus(vec3 p, vec2 t) {
-  // t.x = major radius, t.y = minor radius
-  vec2 q = vec2(length(p.xz) - t.x, p.y);
-  return length(q) - t.y;
-}
-
 // Heart equation:
 // (x^2 + a*(y^2) + z^2 -1)^3 - (x^2)(z^3) -b(y^2)*(z^3)
 float eqHeart(vec3 p, float a, float b) {
@@ -90,71 +74,18 @@ float sdHeart(vec3 p, float a, float b) {
   return abs(eqHeart(p, a, b)) / length(gradHeart(p, a, b));
 }
 
-// --- SDF Operations ---
-float opUnion(float d1, float d2) {
-  return min(d1, d2);
-}
-float opSubtraction(float d1, float d2) {
-  return max(d1, -d2);
-}
-float opIntersection(float d1, float d2) {
-  return max(d1, d2);
-}
-
-// Smooth minimum (for smooth union)
-float opSmoothUnion(float d1, float d2, float k) {
-  float h = clamp(0.5 + 0.5 * (d2 - d1) / k, 0.0, 1.0);
-  return mix(d2, d1, h) - k * h * (1.0 - h);
-}
-
 // --- Scene Definition ---
 // This function returns vec2(signed_distance, material_id)
 vec2 map(vec3 p) {
   float sceneDist = 1e10; // Large number (effectively infinity)
-  float materialID = 0.0; // 0: default/ground, 1: sphere, 2: box, 3: torus, 4: heart
-
-  // Pulsating sphere
-  float sphereRadius = 0.8 + 0.2 * sin(u_time * 2.0);
-  vec3 spherePos = vec3(0.0, sphereRadius, 0.0);
-  float sphereDist = sdSphere(p - spherePos, sphereRadius);
-  if (sphereDist < sceneDist) {
-    sceneDist = sphereDist;
-    materialID = 1.0;
-  }
-
-  // Rotating Box
-  vec3 boxPos = vec3(2.5, 0.5, 0.0);
-  vec3 boxSize = vec3(0.5, 0.5, 0.5);
-  float boxAngle = u_time * 0.5;
-  mat2 rotY_box = mat2(
-    cos(boxAngle),
-    -sin(boxAngle),
-    sin(boxAngle),
-    cos(boxAngle)
-  );
-  vec3 pBox = p - boxPos;
-  pBox.xz = rotY_box * pBox.xz;
-  float boxDist = sdBox(pBox, boxSize);
-  if (boxDist < sceneDist) {
-    sceneDist = boxDist;
-    materialID = 2.0;
-  }
-
-  // Torus
-  vec3 torusPos = vec3(-2.0, 0.6, 0.5);
-  vec2 torusRadii = vec2(0.8, 0.25);
-  float torusDist = sdTorus(p - torusPos, torusRadii);
-  if (torusDist < sceneDist) {
-    sceneDist = torusDist;
-    materialID = 3.0;
-  }
+  float materialID = 0.0; // 0: default/ground, 1: heart
 
   // Heart
-  vec3 heartPos = vec3(0.0, 1.0, -2.0);
+  vec3 heartPos = vec3(0.0, 1.0, 0.0);
   float heartDist = sdHeart((p - heartPos).xzy, 9.0 / 4.0, 9.0 / 200.0);
   if (heartDist < sceneDist) {
     sceneDist = heartDist;
-    materialID = 4.0;
+    materialID = 1.0;
   }
 
   // Ground plane
@@ -223,10 +154,7 @@ vec3 applyLighting(vec3 p, vec3 normal, vec3 rayDir, float materialID) {
 
   vec3 materialColor = vec3(0.6);
   if (materialID == 0.0) materialColor = vec3(0.4, 0.5, 0.3);
-  if (materialID == 1.0) materialColor = vec3(0.8, 0.2, 0.2);
-  if (materialID == 2.0) materialColor = vec3(0.2, 0.2, 0.8);
-  if (materialID == 3.0) materialColor = vec3(0.8, 0.8, 0.2);
-  if (materialID == 4.0) materialColor = vec3(0.9, 0.15, 0.4); // Heart: deep pink/magenta
+  if (materialID == 1.0) materialColor = vec3(0.9, 0.15, 0.4); // Heart: deep pink/magenta
 
   float ambientStrength = 0.2;
   vec3 ambient = ambientStrength * materialColor;
@@ -262,7 +190,7 @@ void main() {
 
   vec2 hitResult = raymarch(rayOrigin, rayDirection);
   float distToSurface = hitResult.x;
-  float materialID_hit = hitResult.y; // Renamed to avoid conflict with map's materialID
+  float materialID_hit = hitResult.y;
 
   vec3 color;
   if (materialID_hit > -0.5) {
@@ -272,7 +200,6 @@ void main() {
 
     float fogAmount = smoothstep(10.0, 30.0, distToSurface);
     color = mix(color, vec3(0.5, 0.6, 0.7), fogAmount);
-
   } else {
     color = vec3(0.5, 0.6, 0.7) - max(rayDirection.y, 0.0) * 0.2;
   }
