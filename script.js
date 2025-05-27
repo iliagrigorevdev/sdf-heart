@@ -1,6 +1,8 @@
 let gl;
 let program;
 let positionBuffer;
+let vao; // Vertex Array Object for WebGL2
+
 let resolutionUniformLocation;
 let timeUniformLocation;
 let cameraPosUniformLocation;
@@ -33,9 +35,11 @@ async function loadShaderSource(url) {
 
 async function main() {
   const canvas = document.getElementById("glcanvas");
-  gl = canvas.getContext("webgl");
+  gl = canvas.getContext("webgl2"); // Request WebGL2 context
   if (!gl) {
-    alert("WebGL not supported!");
+    alert(
+      "WebGL2 not supported! Your browser or device may not support WebGL2.",
+    );
     return;
   }
 
@@ -72,10 +76,32 @@ async function main() {
   );
   cameraZoomUniformLocation = gl.getUniformLocation(program, "u_cameraZoom");
 
+  // Create and bind a Vertex Array Object (VAO)
+  vao = gl.createVertexArray();
+  gl.bindVertexArray(vao);
+
+  // Position buffer setup (now part of VAO state)
   positionBuffer = gl.createBuffer();
   gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
   const positions = [-1, -1, 1, -1, -1, 1, -1, 1, 1, -1, 1, 1];
   gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(positions), gl.STATIC_DRAW);
+
+  // Enable the attribute
+  gl.enableVertexAttribArray(positionAttributeLocation);
+
+  // Tell the attribute how to get data out of positionBuffer
+  gl.vertexAttribPointer(
+    positionAttributeLocation,
+    2, // 2 components per iteration
+    gl.FLOAT, // type is FLOAT
+    false, // don't normalize
+    0, // 0 = move forward size * sizeof(type) each iteration to get the next position
+    0, // 0 = offset from the beginning of the buffer
+  );
+
+  // Unbind VAO and ArrayBuffer (good practice after setup)
+  gl.bindVertexArray(null);
+  gl.bindBuffer(gl.ARRAY_BUFFER, null);
 
   canvas.addEventListener("mousedown", (e) => {
     mouse.dragging = true;
@@ -122,22 +148,8 @@ function render(time) {
 
   gl.useProgram(program);
 
-  gl.enableVertexAttribArray(0); // Corresponds to a_position attribute location
-  gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
-  // Tell the attribute how to get data out of positionBuffer (ARRAY_BUFFER)
-  // 2 components per iteration
-  // type is FLOAT
-  // don't normalize
-  // 0 = move forward size * sizeof(type) each iteration to get the next position
-  // 0 = offset from the beginning of the buffer
-  gl.vertexAttribPointer(
-    gl.getAttribLocation(program, "a_position"),
-    2,
-    gl.FLOAT,
-    false,
-    0,
-    0,
-  );
+  // Bind the VAO. All buffer and attribute pointer setup is already done.
+  gl.bindVertexArray(vao);
 
   const camX =
     camera.lookAt[0] +
@@ -155,6 +167,8 @@ function render(time) {
   gl.uniform1f(cameraZoomUniformLocation, camera.zoom);
 
   gl.drawArrays(gl.TRIANGLES, 0, 6);
+
+  gl.bindVertexArray(null); // Unbind VAO (good practice)
 
   requestAnimationFrame(render);
 }
