@@ -44,6 +44,26 @@
             vec2 q = vec2(length(p.xz) - t.x, p.y);
             return length(q) - t.y;
         }
+
+        // Heart SDF based on the implicit equation:
+        // (x^2 + (9/4)*(y^2) + z^2 -1)^3 - (x^2)*(z^3) -(9/200)*(y^2)*(z^3) = 0
+        // p_obj is in object space, centered at origin.
+        // The function returns f(p_obj), which is not a true SDF.
+        // It needs to be scaled by a normalization factor and object scale in the map function.
+        float sdHeartImplicit(vec3 p_obj) {
+            float x2 = p_obj.x * p_obj.x;
+            float y2 = p_obj.y * p_obj.y;
+            float z2 = p_obj.z * p_obj.z;
+            float z3 = z2 * p_obj.z; // p_obj.z^3
+
+            float term1_base = x2 + (9.0/4.0)*y2 + z2 - 1.0;
+            float term1 = term1_base * term1_base * term1_base;
+            
+            float term2 = x2 * z3;
+            float term3 = (9.0/200.0) * y2 * z3;
+
+            return term1 - term2 - term3;
+        }
         
         // --- SDF Operations ---
         float opUnion(float d1, float d2) { return min(d1, d2); }
@@ -57,15 +77,14 @@
         }
 
         // --- Scene Definition ---
-        // This function returns the signed distance to the closest object in the scene
-        // from point 'p'.
+        // This function returns vec2(signed_distance, material_id)
         vec2 map(vec3 p) {
             float sceneDist = 1e10; // Large number (effectively infinity)
-            float materialID = 0.0; // 0: default, 1: sphere, 2: box, 3: torus
+            float materialID = 0.0; // 0: default/ground, 1: sphere, 2: box, 3: torus, 4: heart
 
             // Pulsating sphere
             float sphereRadius = 0.8 + 0.2 * sin(u_time * 2.0);
-            vec3 spherePos = vec3(0.0, sphereRadius, 0.0); // Make it sit on "ground"
+            vec3 spherePos = vec3(0.0, sphereRadius, 0.0); 
             float sphereDist = sdSphere(p - spherePos, sphereRadius);
             if (sphereDist < sceneDist) {
                 sceneDist = sphereDist;
@@ -75,11 +94,10 @@
             // Rotating Box
             vec3 boxPos = vec3(2.5, 0.5, 0.0);
             vec3 boxSize = vec3(0.5, 0.5, 0.5);
-            // Rotate box around its Y axis
             float boxAngle = u_time * 0.5;
-            mat2 rotY = mat2(cos(boxAngle), -sin(boxAngle), sin(boxAngle), cos(boxAngle));
+            mat2 rotY_box = mat2(cos(boxAngle), -sin(boxAngle), sin(boxAngle), cos(boxAngle));
             vec3 pBox = p - boxPos;
-            pBox.xz = rotY * pBox.xz;
+            pBox.xz = rotY_box * pBox.xz;
             float boxDist = sdBox(pBox, boxSize);
              if (boxDist < sceneDist) {
                 sceneDist = boxDist;
@@ -95,6 +113,25 @@
                 materialID = 3.0;
             }
 
+            // 3D Heart
+            vec3 heartPos = vec3(0.0, 1.0, -2.0); 
+            float heartScale = 0.8;               
+            
+            vec3 p_to_heart_origin = p - heartPos;
+            
+            // Transform p to heart's local, scaled space
+            vec3 p_heart_local = p_to_heart_origin / heartScale;
+            
+            float raw_heart_val = sdHeartImplicit(p_heart_local);
+            
+            float heartSDF_NormalizationFactor = 0.3; 
+            float heartDist = raw_heart_val * heartScale * heartSDF_NormalizationFactor;
+
+            if (heartDist < sceneDist) {
+                sceneDist = heartDist;
+                materialID = 4.0; 
+            }
+
             // Ground plane
             float planeDist = p.y + 0.0; // Plane at y = 0
              if (planeDist < sceneDist) {
@@ -106,12 +143,10 @@
         }
 
         // --- Normal Calculation ---
-        // Calculates the normal of the surface at point 'p' using central differences.
         vec3 calcNormal(vec3 p) {
-            const float epsilon = 0.001; // Small offset for calculating gradient
+            const float epsilon = 0.001; 
             vec2 e = vec2(epsilon, 0.0);
             
-            // Gradient of the SDF (map().x gives distance)
             vec3 normal = vec3(
                 map(p + e.xyy).x - map(p - e.xyy).x,
                 map(p + e.yxy).x - map(p - e.yxy).x,
@@ -121,26 +156,26 @@
         }
 
         // --- Raymarching ---
-        // Returns vec2(distance_traveled, material_id)
+        const int MAX_STEPS = 100; 
+        const float MAX_DIST = 100.0; 
+        const float HIT_THRESHOLD = 0.001; 
+
         vec2 raymarch(vec3 ro, vec3 rd) {
-            float t = 0.0; // Distance traveled along the ray
-            float materialID = -1.0; // -1 means no hit
-            const int MAX_STEPS = 100;
-            const float MAX_DIST = 100.0;
-            const float HIT_THRESHOLD = 0.001;
+            float t = 0.0; 
+            float currentMaterialID = -1.0; // Use a local var for material ID during march
 
             for (int i = 0; i < MAX_STEPS; i++) {
-                vec3 p = ro + t * rd;
-                vec2 res = map(p);
-                float dist = res.x;
-                materialID = res.y;
-
-                if (dist < HIT_THRESHOLD) {
-                    return vec2(t, materialID); // Hit
+                vec3 p_current = ro + t * rd;
+                vec2 map_result = map(p_current);
+                float dist_to_surface = map_result.x;
+                
+                if (dist_to_surface < HIT_THRESHOLD) {
+                    currentMaterialID = map_result.y; 
+                    return vec2(t, currentMaterialID); 
                 }
-                t += dist;
+                t += dist_to_surface;
                 if (t > MAX_DIST) {
-                    break; // Missed (too far)
+                    break; 
                 }
             }
             return vec2(MAX_DIST, -1.0); // Missed
@@ -148,9 +183,9 @@
 
         // --- Camera Ray Generation ---
         vec3 getRayDirection(vec2 uv, vec3 camPos, vec3 lookAt, float zoom) {
-            vec3 f = normalize(lookAt - camPos); // Forward
-            vec3 r = normalize(cross(vec3(0.0, 1.0, 0.0), f)); // Right
-            vec3 u = cross(f, r); // Up
+            vec3 f = normalize(lookAt - camPos); 
+            vec3 r = normalize(cross(vec3(0.0, 1.0, 0.0), f)); 
+            vec3 u = cross(f, r); 
 
             return normalize(f * zoom + uv.x * r + uv.y * u);
         }
@@ -159,43 +194,37 @@
         vec3 applyLighting(vec3 p, vec3 normal, vec3 rayDir, float materialID) {
             vec3 lightPos = vec3(5.0 * cos(u_time * 0.3), 5.0, 5.0 * sin(u_time * 0.3));
             vec3 lightDir = normalize(lightPos - p);
-            vec3 viewDir = -rayDir; // or normalize(u_cameraPos - p)
+            vec3 viewDir = -rayDir; 
 
-            // Material color based on ID
-            vec3 materialColor = vec3(0.6); // Default gray
-            if (materialID == 0.0) materialColor = vec3(0.4, 0.5, 0.3); // Ground green-ish
-            if (materialID == 1.0) materialColor = vec3(0.8, 0.2, 0.2); // Sphere red
-            if (materialID == 2.0) materialColor = vec3(0.2, 0.2, 0.8); // Box blue
-            if (materialID == 3.0) materialColor = vec3(0.8, 0.8, 0.2); // Torus yellow
+            vec3 materialColor = vec3(0.6); 
+            if (materialID == 0.0) materialColor = vec3(0.4, 0.5, 0.3); 
+            if (materialID == 1.0) materialColor = vec3(0.8, 0.2, 0.2); 
+            if (materialID == 2.0) materialColor = vec3(0.2, 0.2, 0.8); 
+            if (materialID == 3.0) materialColor = vec3(0.8, 0.8, 0.2); 
+            if (materialID == 4.0) materialColor = vec3(0.9, 0.15, 0.4); // Heart: deep pink/magenta
 
-            // Ambient
             float ambientStrength = 0.2;
             vec3 ambient = ambientStrength * materialColor;
 
-            // Diffuse
             float diff = max(dot(normal, lightDir), 0.0);
             vec3 diffuse = diff * materialColor;
 
-            // Specular
             float specularStrength = 0.8;
             vec3 reflectDir = reflect(-lightDir, normal);
             float spec = pow(max(dot(viewDir, reflectDir), 0.0), 32.0);
-            vec3 specular = specularStrength * spec * vec3(1.0); // White highlights
+            vec3 specular = specularStrength * spec * vec3(1.0); 
 
-            // Shadow (simple hard shadow)
             float shadow = 1.0;
-            vec3 shadowRayOrigin = p + normal * 0.01; // Offset slightly to avoid self-shadowing
+            vec3 shadowRayOrigin = p + normal * (HIT_THRESHOLD * 10.0); 
             vec2 shadowRes = raymarch(shadowRayOrigin, lightDir);
-            // If shadow ray hits something before reaching the light
-            if (shadowRes.x < length(lightPos - shadowRayOrigin) && shadowRes.y > -0.5) { // y > -0.5 to avoid plane self-shadowing on itself in a weird way
-                shadow = 0.3; // In shadow
+            if (shadowRes.x < length(lightPos - shadowRayOrigin) && shadowRes.y > -0.5) { 
+                shadow = 0.3; 
             }
 
             return ambient + (diffuse + specular) * shadow;
         }
 
         void main() {
-            // Normalized pixel coordinates (from -0.5*aspect to 0.5*aspect, and -0.5 to 0.5)
             vec2 uv = (gl_FragCoord.xy - 0.5 * u_resolution.xy) / u_resolution.y;
 
             vec3 rayOrigin = u_cameraPos;
@@ -203,20 +232,19 @@
 
             vec2 hitResult = raymarch(rayOrigin, rayDirection);
             float distToSurface = hitResult.x;
-            float materialID = hitResult.y;
+            float materialID_hit = hitResult.y; // Renamed to avoid conflict with map's materialID
 
             vec3 color;
-            if (materialID > -0.5) { // Hit something
+            if (materialID_hit > -0.5) { 
                 vec3 hitPoint = rayOrigin + rayDirection * distToSurface;
                 vec3 normal = calcNormal(hitPoint);
-                color = applyLighting(hitPoint, normal, rayDirection, materialID);
+                color = applyLighting(hitPoint, normal, rayDirection, materialID_hit);
 
-                // Fog
-                float fogAmount = smoothstep(10.0, 30.0, distToSurface);
-                color = mix(color, vec3(0.5, 0.6, 0.7), fogAmount);
+                float fogAmount = smoothstep(10.0, 30.0, distToSurface); 
+                color = mix(color, vec3(0.5, 0.6, 0.7), fogAmount); 
 
-            } else { // Missed, draw background
-                color = vec3(0.5, 0.6, 0.7) - max(rayDirection.y, 0.0) * 0.2; // Sky gradient
+            } else { 
+                color = vec3(0.5, 0.6, 0.7) - max(rayDirection.y, 0.0) * 0.2; 
             }
 
             gl_FragColor = vec4(color, 1.0);
@@ -233,13 +261,12 @@
         let cameraLookAtUniformLocation;
         let cameraZoomUniformLocation;
 
-        // Camera state
         let camera = {
             azimuth: Math.PI / 4,
             elevation: Math.PI / 6,
             distance: 10.0,
-            lookAt: [0, 0.5, 0], // Look slightly above origin
-            zoom: 2.0 // Lower is wider FOV
+            lookAt: [0, 0.5, 0], 
+            zoom: 2.0 
         };
 
         let mouse = {
@@ -256,18 +283,16 @@
                 return;
             }
 
-            // Get shader sources
             const vertexShaderSource = document.getElementById('vertex-shader').text;
             const fragmentShaderSource = document.getElementById('fragment-shader').text;
 
-            // Create shaders
             const vertexShader = createShader(gl, gl.VERTEX_SHADER, vertexShaderSource);
             const fragmentShader = createShader(gl, gl.FRAGMENT_SHADER, fragmentShaderSource);
+            if (!vertexShader || !fragmentShader) return;
 
-            // Create program
             program = createProgram(gl, vertexShader, fragmentShader);
+            if (!program) return;
 
-            // Look up attribute and uniform locations
             const positionAttributeLocation = gl.getAttribLocation(program, 'a_position');
             resolutionUniformLocation = gl.getUniformLocation(program, 'u_resolution');
             timeUniformLocation = gl.getUniformLocation(program, 'u_time');
@@ -275,13 +300,11 @@
             cameraLookAtUniformLocation = gl.getUniformLocation(program, 'u_cameraLookAt');
             cameraZoomUniformLocation = gl.getUniformLocation(program, 'u_cameraZoom');
 
-            // Create buffer for a full-screen quad
             positionBuffer = gl.createBuffer();
             gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
-            const positions = [-1, -1, 1, -1, -1, 1, -1, 1, 1, -1, 1, 1]; // Two triangles
+            const positions = [-1, -1, 1, -1, -1, 1, -1, 1, 1, -1, 1, 1];
             gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(positions), gl.STATIC_DRAW);
 
-            // Setup mouse controls
             canvas.addEventListener('mousedown', (e) => {
                 mouse.dragging = true;
                 mouse.lastX = e.clientX;
@@ -297,7 +320,7 @@
                     
                     camera.azimuth -= dx;
                     camera.elevation += dy;
-                    camera.elevation = Math.max(-Math.PI/2 + 0.01, Math.min(Math.PI/2 - 0.01, camera.elevation)); // Clamp elevation
+                    camera.elevation = Math.max(-Math.PI/2 + 0.01, Math.min(Math.PI/2 - 0.01, camera.elevation));
 
                     mouse.lastX = e.clientX;
                     mouse.lastY = e.clientY;
@@ -306,18 +329,16 @@
             canvas.addEventListener('wheel', (e) => {
                 e.preventDefault();
                 camera.distance += e.deltaY * 0.01;
-                camera.distance = Math.max(1.0, Math.min(50.0, camera.distance)); // Clamp distance
+                camera.distance = Math.max(1.0, Math.min(50.0, camera.distance));
             });
 
             requestAnimationFrame(render);
         }
 
         function render(time) {
-            time *= 0.001; // convert time to seconds
+            time *= 0.001; 
 
-            // Resize canvas to match display size * devicePixelRatio for native resolution
             if (resizeCanvasToDisplaySize(gl.canvas, window.devicePixelRatio || 1)) {
-                // If resize happened, viewport needs to be updated
                 gl.viewport(0, 0, gl.canvas.width, gl.canvas.height);
             }
 
@@ -326,31 +347,26 @@
 
             gl.useProgram(program);
 
-            // Set vertex shader attributes
-            gl.enableVertexAttribArray(0); // a_position
+            gl.enableVertexAttribArray(0); 
             gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
             gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
 
-            // Calculate camera position from spherical coordinates
             const camX = camera.lookAt[0] + camera.distance * Math.cos(camera.elevation) * Math.sin(camera.azimuth);
             const camY = camera.lookAt[1] + camera.distance * Math.sin(camera.elevation);
             const camZ = camera.lookAt[2] + camera.distance * Math.cos(camera.elevation) * Math.cos(camera.azimuth);
             const camPos = [camX, camY, camZ];
 
-            // Set uniforms
             gl.uniform2f(resolutionUniformLocation, gl.canvas.width, gl.canvas.height);
             gl.uniform1f(timeUniformLocation, time);
             gl.uniform3fv(cameraPosUniformLocation, camPos);
             gl.uniform3fv(cameraLookAtUniformLocation, camera.lookAt);
             gl.uniform1f(cameraZoomUniformLocation, camera.zoom);
 
-
-            gl.drawArrays(gl.TRIANGLES, 0, 6); // Draw 2 triangles (6 vertices)
+            gl.drawArrays(gl.TRIANGLES, 0, 6); 
 
             requestAnimationFrame(render);
         }
 
-        // --- WebGL Helper Functions ---
         function createShader(gl, type, source) {
             const shader = gl.createShader(type);
             gl.shaderSource(shader, source);
@@ -359,8 +375,9 @@
             if (success) {
                 return shader;
             }
-            console.error("Shader compilation error:", gl.getShaderInfoLog(shader));
+            console.error((type === gl.VERTEX_SHADER ? "VERTEX" : "FRAGMENT") + " SHADER COMPILE ERROR:\n" + gl.getShaderInfoLog(shader) + "\nSource:\n" + source.split('\n').map((l,i) => `${i+1}: ${l}`).join('\n'));
             gl.deleteShader(shader);
+            return null;
         }
 
         function createProgram(gl, vertexShader, fragmentShader) {
@@ -372,34 +389,23 @@
             if (success) {
                 return program;
             }
-            console.error("Program linking error:", gl.getProgramInfoLog(program));
+            console.error("PROGRAM LINK ERROR:", gl.getProgramInfoLog(program));
             gl.deleteProgram(program);
+            return null;
         }
         
-        /**
-         * Resizes the canvas's drawing buffer to match its display size,
-         * scaled by a multiplier (e.g., window.devicePixelRatio).
-         * @param {HTMLCanvasElement} canvas The canvas to resize.
-         * @param {number} [multiplier=1] The resolution multiplier.
-         * @returns {boolean} true if the canvas was resized, false otherwise.
-         */
         function resizeCanvasToDisplaySize(canvas, multiplier) {
             multiplier = multiplier || 1;
-            // round to integer to avoid potential issues with fractional pixels
             const width  = Math.floor(canvas.clientWidth  * multiplier);
             const height = Math.floor(canvas.clientHeight * multiplier);
-
-            // Check if the canvas's internal (drawing buffer) size is different
             if (canvas.width  !== width || canvas.height !== height) {
-                // Make the canvas's drawing buffer match its display size
                 canvas.width  = width;
                 canvas.height = height;
-                return true; // Canvas was resized
+                return true;
             }
-            return false; // Canvas size did not change
+            return false;
         }
 
-        // Start the application
         window.onload = main;
     </script>
 </body>
