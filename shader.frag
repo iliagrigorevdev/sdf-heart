@@ -22,24 +22,72 @@ float sdTorus(vec3 p, vec2 t) {
   return length(q) - t.y;
 }
 
-// Heart SDF based on the implicit equation:
-// (x^2 + (9/4)*(y^2) + z^2 -1)^3 - (x^2)*(z^3) -(9/200)*(y^2)*(z^3) = 0
-// p_obj is in object space, centered at origin.
-// The function returns f(p_obj), which is not a true SDF.
-// It needs to be scaled by a normalization factor and object scale in the map function.
-float sdHeartImplicit(vec3 p_obj) {
-  float x2 = p_obj.x * p_obj.x;
-  float y2 = p_obj.y * p_obj.y;
-  float z2 = p_obj.z * p_obj.z;
-  float z3 = z2 * p_obj.z; // p_obj.z^3
+// Heart equation:
+// (x^2 + a*(y^2) + z^2 -1)^3 - (x^2)(z^3) -b(y^2)*(z^3)
+float eqHeart(vec3 p, float a, float b) {
+  float x = p.x;
+  float y = p.y;
+  float z = p.z;
 
-  float term1_base = x2 + 9.0 / 4.0 * y2 + z2 - 1.0;
-  float term1 = term1_base * term1_base * term1_base;
+  // Pre-calculate powers to make it cleaner
+  float x2 = x * x;
+  float y2 = y * y;
+  float z2 = z * z;
+  float z3 = z2 * z; // or pow(z, 3.0)
 
+  // First term: (x^2 + a*(y^2) + z^2 - 1)^3
+  float term1_base = x2 + a * y2 + z2 - 1.0;
+  float term1 = term1_base * term1_base * term1_base; // or pow(term1_base, 3.0)
+
+  // Second term: (x^2)(z^3)
   float term2 = x2 * z3;
-  float term3 = 9.0 / 200.0 * y2 * z3;
+
+  // Third term: b*(y^2)*(z^3)
+  float term3 = b * y2 * z3;
 
   return term1 - term2 - term3;
+}
+
+// Heart gradient:
+// (
+//   2x [ 3(x^2 + a y^2 + z^2 - 1)^2 - z^3 ],
+//   2y [ 3a(x^2 + a y^2 + z^2 - 1)^2 - b z^3 ],
+//   6z(x^2 + a y^2 + z^2 - 1)^2 - 3z^2(x^2 + b y^2)
+// )
+vec3 gradHeart(vec3 p, float a, float b) {
+  float x = p.x;
+  float y = p.y;
+  float z = p.z;
+
+  // Pre-calculate some common terms for efficiency and readability
+  float x_sq = x * x; // x^2
+  float y_sq = y * y; // y^2
+  float z_sq = z * z; // z^2
+  float z_cub = z_sq * z; // z^3 (or pow(z, 3.0))
+
+  // The term (x^2 + a*y^2 + z^2 - 1)
+  float common_term = x_sq + a * y_sq + z_sq - 1.0;
+  // The term (x^2 + a*y^2 + z^2 - 1)^2
+  float common_term_sq = common_term * common_term; // or pow(common_term, 2.0)
+
+  // Calculate partial derivative with respect to x:
+  // df/dx = 6*x*(x^2 + a*y^2 + z^2 - 1)^2 - 2*x*z^3
+  float df_dx = 6.0 * x * common_term_sq - 2.0 * x * z_cub;
+
+  // Calculate partial derivative with respect to y:
+  // df/dy = 6*a*y*(x^2 + a*y^2 + z^2 - 1)^2 - 2*b*y*z^3
+  float df_dy = 6.0 * a * y * common_term_sq - 2.0 * b * y * z_cub;
+
+  // Calculate partial derivative with respect to z:
+  // df/dz = 6*z*(x^2 + a*y^2 + z^2 - 1)^2 - 3*x^2*z^2 - 3*b*y^2*z^2
+  float df_dz = 6.0 * z * common_term_sq - 3.0 * z_sq * (x_sq + b * y_sq);
+
+  return vec3(df_dx, df_dy, df_dz);
+}
+
+// Heart SDF
+float sdHeart(vec3 p, float a, float b) {
+  return abs(eqHeart(p, a, b)) / length(gradHeart(p, a, b));
 }
 
 // --- SDF Operations ---
@@ -101,9 +149,9 @@ vec2 map(vec3 p) {
     materialID = 3.0;
   }
 
-  // 3D Heart
+  // Heart
   vec3 heartPos = vec3(0.0, 1.0, -2.0);
-  float heartDist = sdHeartImplicit((p - heartPos).xzy);
+  float heartDist = sdHeart((p - heartPos).xzy, 9.0 / 4.0, 9.0 / 200.0);
   if (heartDist < sceneDist) {
     sceneDist = heartDist;
     materialID = 4.0;
