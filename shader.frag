@@ -71,7 +71,9 @@ vec3 gradHeart(vec3 p, float a, float b) {
 
 // Heart SDF
 float sdHeart(vec3 p, float a, float b) {
-  return eqHeart(p, a, b) / length(gradHeart(p, a, b));
+  // Adding a small epsilon to length(gradHeart) to prevent division by zero if gradient is zero
+  // (though unlikely for this implicit surface far from origin, it's a safeguard)
+  return eqHeart(p, a, b) / (length(gradHeart(p, a, b)) + 1e-6);
 }
 
 // --- Scene Definition ---
