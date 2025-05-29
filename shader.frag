@@ -69,6 +69,17 @@ vec3 gradHeart(vec3 p, float a, float b) {
   return vec3(df_dx, df_dy, df_dz);
 }
 
+vec3 gradHeart2(vec3 p, float a, float b) {
+  const float epsilon = 0.001;
+  vec2 e = vec2(epsilon, 0.0);
+  return vec3(
+    eqHeart(p + e.xyy, a, b) - eqHeart(p - e.xyy, a, b),
+    eqHeart(p + e.yxy, a, b) - eqHeart(p - e.yxy, a, b),
+    eqHeart(p + e.yyx, a, b) - eqHeart(p - e.yyx, a, b)
+  ) /
+  (2.0 * e.x);
+}
+
 // Heart SDF (Signed Distance Function)
 // Modified to support anisotropic scaling for animation.
 // p_def_coord: Point in the heart's definition coordinate system.
@@ -77,7 +88,7 @@ vec3 gradHeart(vec3 p, float a, float b) {
 // anim_scales: The (sx, sy, sz) animation scales applied to the heart's x, y, z axes (relative to eqHeart's coord system).
 float sdHeart(vec3 p_def_coord, float a, float b, vec3 anim_scales) {
   float eq_val = eqHeart(p_def_coord, a, b);
-  vec3 grad_val = gradHeart(p_def_coord, a, b); // Gradient w.r.t. p_def_coord
+  vec3 grad_val = gradHeart2(p_def_coord, a, b); // Gradient w.r.t. p_def_coord
 
   // The true SDF for an anisotropically scaled implicit surface F(p_def_coord) = 0,
   // where p_def_coord = p_local_scaled_space / anim_scales, is:
