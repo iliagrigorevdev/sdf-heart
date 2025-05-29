@@ -7,64 +7,69 @@ uniform vec3 u_cameraLookAt;
 uniform float u_cameraZoom; // Effectively FOV control
 
 // Heart equation:
-// (x^2 + a*(y^2) + z^2 -1)^3 - (x^2)(z^3) -b(y^2)*(z^3)
-float eqHeart(vec3 p, float a, float b) {
-  float x = p.x;
-  float y = p.y;
-  float z = p.z;
+// (x^2 + 9/4*y^2 + z^2 - 1)^3 - x^2*z^3 - 9/80*y^2*z^3
+float eqHeart(vec3 p) {
+  float x2 = p.x * p.x;
+  float y2 = p.y * p.y;
+  float z2 = p.z * p.z;
+  float z3 = z2 * p.z; // p.z*p.z*p.z or pow(p.z, 3.0)
 
-  // Pre-calculate powers to make it cleaner
-  float x2 = x * x;
-  float y2 = y * y;
-  float z2 = z * z;
-  float z3 = z2 * z; // or pow(z, 3.0)
+  // Term 1: (x^2 + 9/4*y^2 + z^2 - 1)^3
+  // (9.0/4.0) is 2.25
+  float term1_base = x2 + 2.25 * y2 + z2 - 1.0;
+  float term1 = term1_base * term1_base * term1_base;
 
-  // First term: (x^2 + a*(y^2) + z^2 - 1)^3
-  float term1_base = x2 + a * y2 + z2 - 1.0;
-  float term1 = term1_base * term1_base * term1_base; // or pow(term1_base, 3.0)
-
-  // Second term: (x^2)(z^3)
+  // Term 2: -x^2*z^3
   float term2 = x2 * z3;
 
-  // Third term: b*(y^2)*(z^3)
-  float term3 = b * y2 * z3;
+  // Term 3: -9/80*y^2*z^3
+  // (9.0/80.0) is 0.1125
+  float term3 = 0.1125 * y2 * z3;
 
   return term1 - term2 - term3;
 }
 
 // Heart gradient:
 // (
-//   2x [ 3(x^2 + a y^2 + z^2 - 1)^2 - z^3 ],
-//   2y [ 3a(x^2 + a y^2 + z^2 - 1)^2 - b z^3 ],
-//   6z(x^2 + a y^2 + z^2 - 1)^2 - 3z^2(x^2 + b y^2)
+//   6*x*(x^2 + 9/4*y^2 + z^2 - 1)^2 - 2*x*z^3,
+//   27/2*y*(x^2 + 9/4*y^2 + z^2 - 1)^2 - 9/40*y*z^3,
+//   6*z*(x^2 + 9/4*y^2 + z^2 - 1)^2 - 3*x^2*z^2 - 27/80*y^2*z^2
 // )
-vec3 gradHeart(vec3 p, float a, float b) {
+vec3 gradHeart(vec3 p) {
   float x = p.x;
   float y = p.y;
   float z = p.z;
 
-  // Pre-calculate some common terms for efficiency and readability
+  // Calculate powers efficiently
   float x_sq = x * x; // x^2
   float y_sq = y * y; // y^2
   float z_sq = z * z; // z^2
-  float z_cub = z_sq * z; // z^3 (or pow(z, 3.0))
+  float z_cub = z_sq * z; // z^3
 
-  // The term (x^2 + a*y^2 + z^2 - 1)
-  float common_term = x_sq + a * y_sq + z_sq - 1.0;
-  // The term (x^2 + a*y^2 + z^2 - 1)^2
-  float common_term_sq = common_term * common_term; // or pow(common_term, 2.0)
+  // Common term: (x^2 + 9/4*y^2 + z^2 - 1)
+  // 9.0/4.0 = 2.25
+  float common_term_base = x_sq + 9.0 / 4.0 * y_sq + z_sq - 1.0;
+  float common_term_sq = common_term_base * common_term_base; // (common_term_base)^2
 
-  // Calculate partial derivative with respect to x:
-  // df/dx = 6*x*(x^2 + a*y^2 + z^2 - 1)^2 - 2*x*z^3
+  // Partial derivative with respect to x:
+  // 6.0 * x * common_term_sq - 2.0 * x * z_cub
   float df_dx = 6.0 * x * common_term_sq - 2.0 * x * z_cub;
 
-  // Calculate partial derivative with respect to y:
-  // df/dy = 6*a*y*(x^2 + a*y^2 + z^2 - 1)^2 - 2*b*y*z^3
-  float df_dy = 6.0 * a * y * common_term_sq - 2.0 * b * y * z_cub;
+  // Partial derivative with respect to y:
+  // (27.0/2.0) * y * common_term_sq - (9.0/40.0) * y * z_cub
+  // 27.0/2.0 = 13.5
+  // 9.0/40.0 = 0.225
+  float df_dy = 27.0 / 2.0 * y * common_term_sq - 9.0 / 40.0 * y * z_cub;
+  // Alternative using decimals:
+  // float df_dy = 13.5 * y * common_term_sq - 0.225 * y * z_cub;
 
-  // Calculate partial derivative with respect to z:
-  // df/dz = 6*z*(x^2 + a*y^2 + z^2 - 1)^2 - 3*x^2*z^2 - 3*b*y^2*z^2
-  float df_dz = 6.0 * z * common_term_sq - 3.0 * z_sq * (x_sq + b * y_sq);
+  // Partial derivative with respect to z:
+  // 6.0 * z * common_term_sq - 3.0 * x_sq * z_sq - (27.0/80.0) * y_sq * z_sq
+  // 27.0/80.0 = 0.3375
+  float df_dz =
+    6.0 * z * common_term_sq - 3.0 * x_sq * z_sq - 27.0 / 80.0 * y_sq * z_sq;
+  // Alternative using decimals:
+  // float df_dz = 6.0 * z * common_term_sq - 3.0 * x_sq * z_sq - 0.3375 * y_sq * z_sq;
 
   return vec3(df_dx, df_dy, df_dz);
 }
@@ -73,11 +78,10 @@ vec3 gradHeart(vec3 p, float a, float b) {
 // Modified to support anisotropic scaling for animation.
 // p_def_coord: Point in the heart's definition coordinate system.
 //              (This means it's p_world transformed to heart local, swizzled, AND divided by animation scales)
-// a, b: Shape parameters for the heart equation.
 // anim_scales: The (sx, sy, sz) animation scales applied to the heart's x, y, z axes (relative to eqHeart's coord system).
-float sdHeart(vec3 p_def_coord, float a, float b, vec3 anim_scales) {
-  float eq_val = eqHeart(p_def_coord, a, b);
-  vec3 grad_val = gradHeart(p_def_coord, a, b); // Gradient w.r.t. p_def_coord
+float sdHeart(vec3 p_def_coord, vec3 anim_scales) {
+  float eq_val = eqHeart(p_def_coord);
+  vec3 grad_val = gradHeart(p_def_coord); // Gradient w.r.t. p_def_coord
 
   // The true SDF for an anisotropically scaled implicit surface F(p_def_coord) = 0,
   // where p_def_coord = p_local_scaled_space / anim_scales, is:
@@ -133,16 +137,7 @@ vec2 map(vec3 p) {
   // This p_heart_definition_coords is what eqHeart and gradHeart expect.
   vec3 p_heart_definition_coords = p_local_swizzled / heart_animation_scales;
 
-  // Original heart shape parameters (these define the base shape before animation scaling)
-  const float heart_param_a = 9.0 / 4.0; // Controls y-squash in eqHeart (which is world Z / depth due to swizzle)
-  const float heart_param_b = 9.0 / 200.0;
-
-  float heartDist = sdHeart(
-    p_heart_definition_coords,
-    heart_param_a,
-    heart_param_b,
-    heart_animation_scales
-  );
+  float heartDist = sdHeart(p_heart_definition_coords, heart_animation_scales);
 
   if (heartDist < sceneDist) {
     sceneDist = heartDist;
