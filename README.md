@@ -2,13 +2,7 @@
 
 An interactive WebGL demonstration showcasing a beating 3D heart rendered using raymarching with Signed Distance Fields (SDFs) and shaded with a Physically Based Rendering (PBR) pipeline. The scene includes an animated point light and a procedural sky background, with interactive camera controls.
 
-<!--
-**Live Demo:** [Try it live!](YOUR_GITHUB_PAGES_LINK_HERE)
-
-**Screenshot/GIF:**
-![Screenshot/GIF of the project](link_to_your_screenshot.gif)
-(Add a screenshot or GIF of the running application here)
--->
+**Live Demo:** [Try it live!](https://iliagrigorevdev.github.io/sdf-heart/)
 
 ## Overview
 
