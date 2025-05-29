@@ -241,7 +241,7 @@ vec3 PBRShading(
   // Ambient lighting (a very simple placeholder for Image-Based Lighting)
   // Modified to use a blueish tint derived from the sky
   vec3 ambient_sky_tint = vec3(0.05, 0.15, 0.4); // Corresponds to a deep blue (e.g., zenith)
-  float ambient_intensity_factor = 0.5; // Adjust overall strength of ambient light
+  float ambient_intensity_factor = 4.0; // Adjust overall strength of ambient light
   vec3 ambient_contrib =
     ambient_sky_tint * ambient_intensity_factor * albedo_col * ao_val;
 
@@ -274,7 +274,7 @@ vec3 getSurfaceColor(vec3 p, vec3 normal, vec3 V, float materialID) {
 
   // Light intensity/color. Tuned higher due to attenuation.
   // Adjust this value if the heart is too bright or too dim.
-  vec3 lightRadiance = vec3(200.0);
+  vec3 lightRadiance = vec3(400.0);
 
   return PBRShading(
     p,
