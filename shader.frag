@@ -93,7 +93,7 @@ float sdHeart(vec3 p_def_coord, vec3 anim_scales) {
 // This function returns vec2(signed_distance, material_id)
 vec2 map(vec3 p) {
   float sceneDist = 1e10; // Large number (effectively infinity)
-  float materialID = 0.0; // 0: default/ground, 1: heart
+  float materialID = 0.0; // 0: default, 1: heart
 
   // --- Heart Definition & Animation ---
   vec3 heartPos = vec3(0.0, 1.0, 0.0); // Center of the heart in world space
@@ -142,13 +142,6 @@ vec2 map(vec3 p) {
   if (heartDist < sceneDist) {
     sceneDist = heartDist;
     materialID = 1.0;
-  }
-
-  // Ground plane
-  float planeDist = p.y + 0.0; // Plane at y = 0
-  if (planeDist < sceneDist) {
-    sceneDist = planeDist;
-    materialID = 0.0; // Ground material
   }
 
   return vec2(sceneDist, materialID);
@@ -210,7 +203,6 @@ vec3 applyLighting(vec3 p, vec3 normal, vec3 rayDir, float materialID) {
   vec3 viewDir = -rayDir;
 
   vec3 materialColor = vec3(0.6); // Default color
-  if (materialID == 0.0) materialColor = vec3(0.4, 0.5, 0.3); // Ground: desaturated green
   if (materialID == 1.0) materialColor = vec3(0.9, 0.15, 0.4); // Heart: deep pink/magenta
 
   // Ambient light
