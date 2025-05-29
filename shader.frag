@@ -239,11 +239,11 @@ vec3 PBRShading(
     (diffuse_contrib + specular_contrib) * radiance * NdotL;
 
   // Ambient lighting (a very simple placeholder for Image-Based Lighting)
-  // A common simple ambient term:
-  vec3 ambient_contrib = vec3(0.1) * albedo_col * ao_val;
-  // For a slightly more involved diffuse ambient based on sky:
-  // vec3 skyAmbientColor = vec3(0.5, 0.6, 0.7) * 0.1; // Based on sky/fog, toned down
-  // ambient_contrib = (kD * albedo_col / PI) * skyAmbientColor * ao_val;
+  // Modified to use a blueish tint derived from the sky
+  vec3 ambient_sky_tint = vec3(0.05, 0.15, 0.4); // Corresponds to a deep blue (e.g., zenith)
+  float ambient_intensity_factor = 0.5; // Adjust overall strength of ambient light
+  vec3 ambient_contrib =
+    ambient_sky_tint * ambient_intensity_factor * albedo_col * ao_val;
 
   return ambient_contrib + direct_lighting;
 }
@@ -305,6 +305,10 @@ void main() {
   float materialID_hit = hitResult.y;
 
   vec3 color;
+  // Sky Colors (linear space)
+  vec3 horizonSkyColor = vec3(0.15, 0.45, 0.85); // Vibrant light blue for horizon
+  vec3 zenithSkyColor = vec3(0.05, 0.15, 0.4); // Deeper blue for zenith
+
   if (materialID_hit > -0.5) {
     vec3 hitPoint = rayOrigin + rayDirection * distToSurface;
     vec3 normal = calcNormal(hitPoint, materialID_hit);
@@ -318,12 +322,16 @@ void main() {
 
     // Fog effect: color blends towards fogColor based on distance
     float fogAmount = smoothstep(10.0, 30.0, distToSurface);
-    vec3 fogColor = vec3(0.5, 0.6, 0.7);
+    vec3 fogColor = horizonSkyColor; // Fog takes on the color of the horizon sky
     color = mix(color, fogColor, fogAmount);
   } else {
-    // Background color (sky)
-    vec3 skyColor = vec3(0.5, 0.6, 0.7);
-    color = skyColor - max(rayDirection.y, 0.0) * 0.2;
+    // Background color (sky gradient)
+    // rayDirection.y goes from -1 (down) to 1 (up / zenith)
+    // We want horizonColor at rayDirection.y = 0, zenithColor at rayDirection.y = 1 (or higher)
+    // And horizonColor for rayDirection.y < 0
+    float t_sky = smoothstep(0.0, 0.8, rayDirection.y); // 0 at horizon, 1 towards zenith (saturates at 0.8 up)
+    color = mix(horizonSkyColor, zenithSkyColor, t_sky);
+
     // Gamma correct background as well for consistency
     color = pow(color, vec3(1.0 / 2.2));
   }
