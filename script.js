@@ -113,7 +113,7 @@ async function main() {
 function render(time) {
   time *= 0.001;
 
-  if (resizeCanvasToDisplaySize(gl.canvas, window.devicePixelRatio || 1)) {
+  if (resizeCanvasToDisplaySize(gl.canvas, /*window.devicePixelRatio || */ 1)) {
     gl.viewport(0, 0, gl.canvas.width, gl.canvas.height);
   }
 
