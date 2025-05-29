@@ -290,7 +290,8 @@ vec3 getSurfaceColor(vec3 p, vec3 normal, vec3 V, float materialID) {
 }
 
 void main() {
-  vec2 uv = (gl_FragCoord.xy - 0.5 * u_resolution.xy) / u_resolution.y;
+  float min_dimension = min(u_resolution.x, u_resolution.y);
+  vec2 uv = (gl_FragCoord.xy - 0.5 * u_resolution.xy) / min_dimension;
 
   vec3 rayOrigin = u_cameraPos;
   vec3 rayDirection = getRayDirection(
