@@ -227,19 +227,7 @@ vec3 applyLighting(vec3 p, vec3 normal, vec3 rayDir, float materialID) {
   float spec = pow(max(dot(viewDir, reflectDir), 0.0), 32.0); // Shininess
   vec3 specular = specularStrength * spec * vec3(1.0); // White highlights
 
-  // Shadow calculation
-  float shadow = 1.0;
-  // Offset shadow ray origin slightly along the normal to avoid self-shadowing ("shadow acne")
-  vec3 shadowRayOrigin = p + normal * (HIT_THRESHOLD * 25.0); // Increased bias for scaled SDF
-  vec2 shadowRes = raymarch(shadowRayOrigin, lightDir);
-
-  // Check if the shadow ray hit an object before reaching the light source
-  if (shadowRes.x < length(lightPos - shadowRayOrigin) && shadowRes.y > -0.5) {
-    // shadowRes.y > -0.5 means a valid material was hit
-    shadow = 0.3; // Point is in shadow
-  }
-
-  return ambient + (diffuse + specular) * shadow;
+  return ambient + (diffuse + specular);
 }
 
 void main() {
