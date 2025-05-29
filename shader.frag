@@ -6,6 +6,12 @@ uniform vec3 u_cameraPos;
 uniform vec3 u_cameraLookAt;
 uniform float u_cameraZoom; // Effectively FOV control
 
+// --- Helper struct and function for heart coordinate transformations ---
+struct HeartTransformData {
+  vec3 p_definition_space; // Point in heart's definition space (transformed for eqHeart)
+  vec3 animation_scales; // Animation scales (sx, sy, sz for eqHeart axes)
+};
+
 // Heart equation:
 // (x^2 + 9/4*y^2 + z^2 - 1)^3 - x^2*z^3 - 9/80*y^2*z^3
 float eqHeart(vec3 p) {
@@ -116,11 +122,10 @@ vec3 getHeartAnimationScales() {
   return vec3(scale_heart_eqX, scale_heart_eqY, scale_heart_eqZ);
 }
 
-// --- Scene Definition ---
-// This function returns vec2(signed_distance, material_id)
-vec2 map(vec3 p) {
-  float sceneDist = 1e10; // Large number (effectively infinity)
-  float materialID = 0.0; // 0: default, 1: heart
+// Calculates the necessary coordinates for evaluating the heart SDF and its normal.
+// Takes a point in world space and returns its transformed coordinates for the heart.
+HeartTransformData getHeartTransformDataForPoint(vec3 p_world) {
+  HeartTransformData data;
 
   // --- Heart Definition & Animation ---
   vec3 heartPos = vec3(0.0, 0.0, 0.0); // Center of the heart in world space
@@ -130,15 +135,31 @@ vec2 map(vec3 p) {
   // eqHeart's x-axis maps to world X (width)
   // eqHeart's y-axis maps to world Z (depth)
   // eqHeart's z-axis maps to world Y (height)
-  vec3 p_local_swizzled = (p - heartPos).xzy;
+  vec3 p_local_swizzled = (p_world - heartPos).xzy;
 
-  vec3 heart_animation_scales = getHeartAnimationScales();
+  data.animation_scales = getHeartAnimationScales();
 
   // Transform the local, swizzled point into the heart's *definition* space by dividing by animation scales.
   // This p_heart_definition_coords is what eqHeart and gradHeart expect.
-  vec3 p_heart_definition_coords = p_local_swizzled / heart_animation_scales;
+  data.p_definition_space = p_local_swizzled / data.animation_scales;
 
-  float heartDist = sdHeart(p_heart_definition_coords, heart_animation_scales);
+  return data;
+}
+
+// --- Scene Definition ---
+// This function returns vec2(signed_distance, material_id)
+vec2 map(vec3 p) {
+  float sceneDist = 1e10; // Large number (effectively infinity)
+  float materialID = 0.0; // 0: default, 1: heart
+
+  // --- Heart ---
+  // Get transformed coordinates and animation scales for the current world point p
+  HeartTransformData heart_data = getHeartTransformDataForPoint(p);
+
+  float heartDist = sdHeart(
+    heart_data.p_definition_space,
+    heart_data.animation_scales
+  );
 
   if (heartDist < sceneDist) {
     sceneDist = heartDist;
@@ -151,14 +172,11 @@ vec2 map(vec3 p) {
 // --- Normal Calculation ---
 vec3 calcNormal(vec3 p, float materialID) {
   if (materialID == 1.0) {
-    // If it's the heart
-    vec3 heartPos = vec3(0.0, 0.0, 0.0);
-    vec3 p_local_swizzled = (p - heartPos).xzy;
-    vec3 heart_animation_scales = getHeartAnimationScales();
-    vec3 p_heart_definition_coords = p_local_swizzled / heart_animation_scales;
-    vec3 grad_def_space = gradHeart(p_heart_definition_coords);
-    vec3 grad_local_swizzled_space = grad_def_space / heart_animation_scales;
-
+    // Get transformed coordinates and animation scales for the current world point p
+    HeartTransformData heart_data = getHeartTransformDataForPoint(p);
+    vec3 grad_def_space = gradHeart(heart_data.p_definition_space);
+    vec3 grad_local_swizzled_space =
+      grad_def_space / heart_data.animation_scales;
     vec3 n = vec3(
       grad_local_swizzled_space.x,
       grad_local_swizzled_space.z,
@@ -169,7 +187,6 @@ vec3 calcNormal(vec3 p, float materialID) {
     // Fallback to finite differences for other objects
     const float epsilon = 0.001;
     vec2 e = vec2(epsilon, 0.0);
-
     vec3 normal = vec3(
       map(p + e.xyy).x - map(p - e.xyy).x,
       map(p + e.yxy).x - map(p - e.yxy).x,
