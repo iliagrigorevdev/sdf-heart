@@ -320,10 +320,6 @@ void main() {
     color = color / (color + vec3(1.0)); // Reinhard tonemapping (maps HDR to LDR)
     color = pow(color, vec3(1.0 / 2.2)); // Gamma correction (for sRGB display)
 
-    // Fog effect: color blends towards fogColor based on distance
-    float fogAmount = smoothstep(10.0, 30.0, distToSurface);
-    vec3 fogColor = horizonSkyColor; // Fog takes on the color of the horizon sky
-    color = mix(color, fogColor, fogAmount);
   } else {
     // Background color (sky gradient)
     // rayDirection.y goes from -1 (down) to 1 (up / zenith)
