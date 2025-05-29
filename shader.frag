@@ -240,7 +240,7 @@ vec3 PBRShading(
 
   // Ambient lighting (a very simple placeholder for Image-Based Lighting)
   // A common simple ambient term:
-  vec3 ambient_contrib = vec3(0.03) * albedo_col * ao_val;
+  vec3 ambient_contrib = vec3(0.1) * albedo_col * ao_val;
   // For a slightly more involved diffuse ambient based on sky:
   // vec3 skyAmbientColor = vec3(0.5, 0.6, 0.7) * 0.1; // Based on sky/fog, toned down
   // ambient_contrib = (kD * albedo_col / PI) * skyAmbientColor * ao_val;
@@ -258,9 +258,9 @@ vec3 getSurfaceColor(vec3 p, vec3 normal, vec3 V, float materialID) {
 
   if (materialID == 1.0) {
     // Heart material
-    albedo = vec3(0.9, 0.15, 0.4); // Heart: deep pink/magenta
-    metallic = 0.2; // Slightly metallic character
-    roughness = 0.4; // Moderately smooth, will have defined highlights
+    albedo = vec3(1.0, 0.0, 0.0);
+    metallic = 0.1;
+    roughness = 0.4;
   }
   // Add other material definitions here with `else if (materialID == X.X)`
 
@@ -274,7 +274,7 @@ vec3 getSurfaceColor(vec3 p, vec3 normal, vec3 V, float materialID) {
 
   // Light intensity/color. Tuned higher due to attenuation.
   // Adjust this value if the heart is too bright or too dim.
-  vec3 lightRadiance = vec3(60.0);
+  vec3 lightRadiance = vec3(200.0);
 
   return PBRShading(
     p,
