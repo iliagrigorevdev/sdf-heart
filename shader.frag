@@ -89,22 +89,8 @@ float sdHeart(vec3 p_def_coord, vec3 anim_scales) {
   return eq_val / (length(grad_val / anim_scales) + 1e-9); // Increased epsilon slightly from 1e-6 for stability with scales
 }
 
-// --- Scene Definition ---
-// This function returns vec2(signed_distance, material_id)
-vec2 map(vec3 p) {
-  float sceneDist = 1e10; // Large number (effectively infinity)
-  float materialID = 0.0; // 0: default, 1: heart
-
-  // --- Heart Definition & Animation ---
-  vec3 heartPos = vec3(0.0, 0.0, 0.0); // Center of the heart in world space
-
-  // Transform world point p to heart's local, swizzled coordinate system (before animation scaling)
-  // This swizzle orients the heart:
-  // eqHeart's x-axis maps to world X (width)
-  // eqHeart's y-axis maps to world Z (depth)
-  // eqHeart's z-axis maps to world Y (height)
-  vec3 p_local_swizzled = (p - heartPos).xzy;
-
+// Calculates the anisotropic scaling factors for the heart animation based on time.
+vec3 getHeartAnimationScales() {
   // Animation parameters for heartbeat
   float beat_amplitude = 0.02; // Max contraction/expansion
   float beat_bpm = 30.0; // Beats per minute for the animation
@@ -127,11 +113,26 @@ vec2 map(vec3 p) {
   // Add a small epsilon to denominator to prevent division by zero if sx*sy is ever zero (though logic prevents s_beat=0).
   float scale_heart_eqZ = 1.0 / (scale_heart_eqX * scale_heart_eqY + 1e-7);
 
-  vec3 heart_animation_scales = vec3(
-    scale_heart_eqX,
-    scale_heart_eqY,
-    scale_heart_eqZ
-  );
+  return vec3(scale_heart_eqX, scale_heart_eqY, scale_heart_eqZ);
+}
+
+// --- Scene Definition ---
+// This function returns vec2(signed_distance, material_id)
+vec2 map(vec3 p) {
+  float sceneDist = 1e10; // Large number (effectively infinity)
+  float materialID = 0.0; // 0: default, 1: heart
+
+  // --- Heart Definition & Animation ---
+  vec3 heartPos = vec3(0.0, 0.0, 0.0); // Center of the heart in world space
+
+  // Transform world point p to heart's local, swizzled coordinate system (before animation scaling)
+  // This swizzle orients the heart:
+  // eqHeart's x-axis maps to world X (width)
+  // eqHeart's y-axis maps to world Z (depth)
+  // eqHeart's z-axis maps to world Y (height)
+  vec3 p_local_swizzled = (p - heartPos).xzy;
+
+  vec3 heart_animation_scales = getHeartAnimationScales();
 
   // Transform the local, swizzled point into the heart's *definition* space by dividing by animation scales.
   // This p_heart_definition_coords is what eqHeart and gradHeart expect.
@@ -148,16 +149,34 @@ vec2 map(vec3 p) {
 }
 
 // --- Normal Calculation ---
-vec3 calcNormal(vec3 p) {
-  const float epsilon = 0.001;
-  vec2 e = vec2(epsilon, 0.0);
+vec3 calcNormal(vec3 p, float materialID) {
+  if (materialID == 1.0) {
+    // If it's the heart
+    vec3 heartPos = vec3(0.0, 0.0, 0.0);
+    vec3 p_local_swizzled = (p - heartPos).xzy;
+    vec3 heart_animation_scales = getHeartAnimationScales();
+    vec3 p_heart_definition_coords = p_local_swizzled / heart_animation_scales;
+    vec3 grad_def_space = gradHeart(p_heart_definition_coords);
+    vec3 grad_local_swizzled_space = grad_def_space / heart_animation_scales;
 
-  vec3 normal = vec3(
-    map(p + e.xyy).x - map(p - e.xyy).x,
-    map(p + e.yxy).x - map(p - e.yxy).x,
-    map(p + e.yyx).x - map(p - e.yyx).x
-  );
-  return normalize(normal);
+    vec3 n = vec3(
+      grad_local_swizzled_space.x,
+      grad_local_swizzled_space.z,
+      grad_local_swizzled_space.y
+    );
+    return normalize(n);
+  } else {
+    // Fallback to finite differences for other objects
+    const float epsilon = 0.001;
+    vec2 e = vec2(epsilon, 0.0);
+
+    vec3 normal = vec3(
+      map(p + e.xyy).x - map(p - e.xyy).x,
+      map(p + e.yxy).x - map(p - e.yxy).x,
+      map(p + e.yyx).x - map(p - e.yyx).x
+    );
+    return normalize(normal);
+  }
 }
 
 // --- Raymarching ---
@@ -249,7 +268,7 @@ void main() {
   if (materialID_hit > -0.5) {
     // If an object was hit (materialID is not -1.0)
     vec3 hitPoint = rayOrigin + rayDirection * distToSurface;
-    vec3 normal = calcNormal(hitPoint);
+    vec3 normal = calcNormal(hitPoint, materialID_hit);
     color = applyLighting(hitPoint, normal, rayDirection, materialID_hit);
 
     // Fog effect: color blends towards fogColor based on distance
