@@ -7,18 +7,23 @@ let cameraPosUniformLocation;
 let cameraLookAtUniformLocation;
 let cameraZoomUniformLocation;
 
+// For unrelated improvement: store positionAttributeLocation globally or pass it
+let positionAttributeLocation; // Added for consistency
+
 let camera = {
   azimuth: 0,
   elevation: Math.PI / 12,
   distance: 6.0,
   lookAt: [0, 0.2, 0],
-  zoom: 2.0,
+  zoom: 2.0, // This zoom is currently passed to shader but not interactive
 };
 
 let mouse = {
   lastX: 0,
   lastY: 0,
-  dragging: false,
+  dragging: false, // For single touch/mouse orbit
+  lastPinchDistance: 0, // For two-finger pinch
+  pinching: false, // To indicate pinch gesture is active
 };
 
 async function loadShaderSource(url) {
@@ -62,7 +67,8 @@ async function main() {
   program = createProgram(gl, vertexShader, fragmentShader);
   if (!program) return;
 
-  const positionAttributeLocation = gl.getAttribLocation(program, "a_position");
+  // Store attribute location
+  positionAttributeLocation = gl.getAttribLocation(program, "a_position");
   resolutionUniformLocation = gl.getUniformLocation(program, "u_resolution");
   timeUniformLocation = gl.getUniformLocation(program, "u_time");
   cameraPosUniformLocation = gl.getUniformLocation(program, "u_cameraPos");
@@ -77,10 +83,12 @@ async function main() {
   const positions = [-1, -1, 1, -1, -1, 1, -1, 1, 1, -1, 1, 1];
   gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(positions), gl.STATIC_DRAW);
 
+  // Mouse Listeners
   canvas.addEventListener("mousedown", (e) => {
     mouse.dragging = true;
     mouse.lastX = e.clientX;
     mouse.lastY = e.clientY;
+    mouse.pinching = false; // Ensure pinching is off if mouse is used
   });
   canvas.addEventListener("mouseup", () => {
     mouse.dragging = false;
@@ -93,7 +101,7 @@ async function main() {
       camera.azimuth -= dx;
       camera.elevation -= dy;
       camera.elevation = Math.max(
-        -Math.PI / 2 + 0.01,
+        -Math.PI / 2 + 0.01, // Prevents looking straight up or down
         Math.min(Math.PI / 2 - 0.01, camera.elevation),
       );
 
@@ -105,6 +113,84 @@ async function main() {
     e.preventDefault();
     camera.distance += e.deltaY * 0.01;
     camera.distance = Math.max(1.0, Math.min(50.0, camera.distance));
+  });
+
+  // Touch Listeners
+  canvas.addEventListener(
+    "touchstart",
+    (e) => {
+      e.preventDefault(); // Important to prevent default touch actions (e.g., scrolling)
+      if (e.touches.length === 1) {
+        mouse.dragging = true;
+        mouse.lastX = e.touches[0].clientX;
+        mouse.lastY = e.touches[0].clientY;
+        mouse.pinching = false;
+      } else if (e.touches.length === 2) {
+        mouse.dragging = false; // Stop dragging if two fingers are down
+        mouse.pinching = true;
+        const dx = e.touches[0].clientX - e.touches[1].clientX;
+        const dy = e.touches[0].clientY - e.touches[1].clientY;
+        mouse.lastPinchDistance = Math.sqrt(dx * dx + dy * dy);
+      }
+    },
+    { passive: false },
+  ); // passive: false allows preventDefault
+
+  canvas.addEventListener(
+    "touchmove",
+    (e) => {
+      e.preventDefault();
+      if (mouse.dragging && e.touches.length === 1) {
+        const touch = e.touches[0];
+        const dx = (touch.clientX - mouse.lastX) * 0.01;
+        const dy = (touch.clientY - mouse.lastY) * 0.01;
+
+        camera.azimuth -= dx;
+        camera.elevation -= dy;
+        camera.elevation = Math.max(
+          -Math.PI / 2 + 0.01,
+          Math.min(Math.PI / 2 - 0.01, camera.elevation),
+        );
+
+        mouse.lastX = touch.clientX;
+        mouse.lastY = touch.clientY;
+      } else if (mouse.pinching && e.touches.length === 2) {
+        const t0 = e.touches[0];
+        const t1 = e.touches[1];
+        const dx = t0.clientX - t1.clientX;
+        const dy = t0.clientY - t1.clientY;
+        const currentPinchDistance = Math.sqrt(dx * dx + dy * dy);
+        const deltaDistance = currentPinchDistance - mouse.lastPinchDistance;
+
+        // Pinch apart = zoom in (decrease distance)
+        // Pinch together = zoom out (increase distance)
+        camera.distance -= deltaDistance * 0.05; // Adjust sensitivity as needed
+        camera.distance = Math.max(1.0, Math.min(50.0, camera.distance));
+
+        mouse.lastPinchDistance = currentPinchDistance;
+      }
+    },
+    { passive: false },
+  );
+
+  canvas.addEventListener("touchend", (e) => {
+    // e.preventDefault(); // Usually not strictly needed for touchend
+    if (e.touches.length === 0) {
+      mouse.dragging = false;
+      mouse.pinching = false;
+    } else if (e.touches.length === 1) {
+      // If one finger is lifted (was pinching), switch to dragging with the remaining finger
+      mouse.pinching = false;
+      mouse.dragging = true;
+      mouse.lastX = e.touches[0].clientX;
+      mouse.lastY = e.touches[0].clientY;
+    }
+  });
+
+  canvas.addEventListener("touchcancel", (e) => {
+    // Treat cancel like touchend with no remaining touches
+    mouse.dragging = false;
+    mouse.pinching = false;
   });
 
   requestAnimationFrame(render);
@@ -122,21 +208,16 @@ function render(time) {
 
   gl.useProgram(program);
 
-  gl.enableVertexAttribArray(0); // Corresponds to a_position attribute location
+  // Use the stored positionAttributeLocation
+  gl.enableVertexAttribArray(positionAttributeLocation);
   gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
-  // Tell the attribute how to get data out of positionBuffer (ARRAY_BUFFER)
-  // 2 components per iteration
-  // type is FLOAT
-  // don't normalize
-  // 0 = move forward size * sizeof(type) each iteration to get the next position
-  // 0 = offset from the beginning of the buffer
   gl.vertexAttribPointer(
-    gl.getAttribLocation(program, "a_position"),
-    2,
-    gl.FLOAT,
-    false,
-    0,
-    0,
+    positionAttributeLocation, // Use the stored location
+    2, // 2 components per iteration
+    gl.FLOAT, // type is FLOAT
+    false, // don't normalize
+    0, // 0 = move forward size * sizeof(type) each iteration
+    0, // 0 = offset from the beginning of the buffer
   );
 
   const camX =
