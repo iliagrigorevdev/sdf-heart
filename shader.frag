@@ -96,7 +96,7 @@ vec2 map(vec3 p) {
   float materialID = 0.0; // 0: default, 1: heart
 
   // --- Heart Definition & Animation ---
-  vec3 heartPos = vec3(0.0, 1.0, 0.0); // Center of the heart in world space
+  vec3 heartPos = vec3(0.0, 0.0, 0.0); // Center of the heart in world space
 
   // Transform world point p to heart's local, swizzled coordinate system (before animation scaling)
   // This swizzle orients the heart:
@@ -106,7 +106,7 @@ vec2 map(vec3 p) {
   vec3 p_local_swizzled = (p - heartPos).xzy;
 
   // Animation parameters for heartbeat
-  float beat_amplitude = 0.05; // Max contraction/expansion (e.g., 0.05 means 5% change from base size)
+  float beat_amplitude = 0.02; // Max contraction/expansion
   float beat_bpm = 30.0; // Beats per minute for the animation
   float beat_freq_rad_per_sec = 2.0 * 3.1415926535 * (beat_bpm / 60.0); // Convert BPM to angular frequency
 

@@ -8,10 +8,10 @@ let cameraLookAtUniformLocation;
 let cameraZoomUniformLocation;
 
 let camera = {
-  azimuth: Math.PI / 4,
-  elevation: Math.PI / 6,
-  distance: 10.0,
-  lookAt: [0, 0.5, 0],
+  azimuth: 0,
+  elevation: Math.PI / 12,
+  distance: 6.0,
+  lookAt: [0, 0.2, 0],
   zoom: 2.0,
 };
 
