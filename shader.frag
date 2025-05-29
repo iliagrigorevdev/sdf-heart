@@ -198,7 +198,15 @@ vec3 getRayDirection(vec2 uv, vec3 camPos, vec3 lookAt, float zoom) {
 
 // --- Lighting ---
 vec3 applyLighting(vec3 p, vec3 normal, vec3 rayDir, float materialID) {
-  vec3 lightPos = vec3(5.0 * cos(u_time * 0.3), 5.0, 5.0 * sin(u_time * 0.3));
+  // Light position animated from left to right and back
+  float light_x_amplitude = 7.0; // How far left/right it moves from center (e.g., from -7.0 to 7.0)
+  float light_speed = 0.5; // Speed of the oscillation (adjust for desired pace)
+  float light_x = sin(u_time * light_speed) * light_x_amplitude;
+  float light_y = 5.0; // Keep Y constant (height of the light)
+  float light_z = 3.0; // Keep Z constant (depth of the light, can be adjusted)
+
+  vec3 lightPos = vec3(light_x, light_y, light_z);
+
   vec3 lightDir = normalize(lightPos - p);
   vec3 viewDir = -rayDir;
 
