@@ -121,8 +121,8 @@ To run this project, you need to serve the files through a local web server beca
 1.  **Clone the repository (or download the files):**
 
     ```bash
-    git clone https://your-repository-link.git
-    cd your-project-directory
+    git clone https://github.com/iliagrigorevdev/sdf-heart.git
+    cd sdf-heart
     ```
 
     (If you're just using the provided files, save `index.html`, `script.js`, `shader.vert`, and `shader.frag` into a directory.)
